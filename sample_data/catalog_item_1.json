@@ -1,0 +1,14 @@
+{
+  "image": "Sony Wireless Headphones",
+  "item_id": "PROD-001",
+  "name": "Wireless Bluetooth Headphones",
+  "labels": {
+    "category": "Electronics",
+    "brand": "SoundMax",
+    "color": "Black",
+    "connectivity": "Bluetooth 5.0",
+    "type": "Over-ear"
+  },
+  "price": 79.99,
+  "in_stock": true
+}

@@ -1,0 +1,15 @@
+{
+  "image": "Samsung TV",
+  "item_id": "PROD-004",
+  "name": "Yoga Mat Premium",
+  "labels": {
+    "category": "Fitness",
+    "brand": "FlexCore",
+    "material": "Natural Rubber",
+    "color": "Purple",
+    "thickness": "6mm",
+    "eco_friendly": "Yes"
+  },
+  "price": 45.00,
+  "in_stock": true
+}

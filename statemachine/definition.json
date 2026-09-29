@@ -1,0 +1,83 @@
+{
+  "Comment": "Catalog Data Quality Checker with Image Classification - Step Function Workflow",
+  "StartAt": "FetchCatalogItems",
+  "States": {
+    "FetchCatalogItems": {
+      "Type": "Task",
+      "Resource": "${FetchCatalogFunctionArn}",
+      "Comment": "Read all catalog item JSONs from S3",
+      "ResultPath": "$",
+      "Next": "ClassifyItems"
+    },
+    "ClassifyItems": {
+      "Type": "Map",
+      "Comment": "Classify each catalog item in parallel based on image text descriptor. MaxConcurrency controls scaling; Retry/Catch provide fault tolerance.",
+      "InputPath": "$",
+      "ItemsPath": "$.items",
+      "MaxConcurrency": 10,
+      "ResultPath": "$.classified_items",
+      "Retry": [
+        {
+          "ErrorEquals": ["States.TaskFailed", "Lambda.ServiceException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.classification_error",
+          "Next": "CheckDataQuality"
+        }
+      ],
+      "Iterator": {
+        "StartAt": "ClassifySingleItem",
+        "States": {
+          "ClassifySingleItem": {
+            "Type": "Task",
+            "Resource": "${ClassifyImageFunctionArn}",
+            "End": true
+          }
+        }
+      },
+      "Next": "CheckDataQuality"
+    },
+    "CheckDataQuality": {
+      "Type": "Task",
+      "Resource": "${CheckQualityFunctionArn}",
+      "Comment": "Validate label counts, quality, and classification confidence for each item",
+      "ResultPath": "$",
+      "Next": "HasFailures"
+    },
+    "HasFailures": {
+      "Type": "Choice",
+      "Comment": "Branch based on whether any items failed quality checks",
+      "Choices": [
+        {
+          "Variable": "$.failed",
+          "NumericGreaterThan": 0,
+          "Next": "WriteFailureReport"
+        }
+      ],
+      "Default": "WriteSuccessReport"
+    },
+    "WriteFailureReport": {
+      "Type": "Task",
+      "Resource": "${WriteResultsFunctionArn}",
+      "Comment": "Write quality report (has failures) to S3",
+      "ResultPath": "$",
+      "Next": "WorkflowComplete"
+    },
+    "WriteSuccessReport": {
+      "Type": "Task",
+      "Resource": "${WriteResultsFunctionArn}",
+      "Comment": "Write quality report (all passed) to S3",
+      "ResultPath": "$",
+      "Next": "WorkflowComplete"
+    },
+    "WorkflowComplete": {
+      "Type": "Succeed"
+    }
+  }
+}

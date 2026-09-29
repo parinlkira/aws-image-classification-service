@@ -1,0 +1,11 @@
+{
+  "image": "Nike Running Shoes",
+  "item_id": "PROD-002",
+  "name": "Running Shoes",
+  "labels": {
+    "category": "Footwear",
+    "brand": ""
+  },
+  "price": 129.99,
+  "in_stock": true
+}

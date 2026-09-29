@@ -1,0 +1,150 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Catalog Data Quality Checker - Step Functions workflow with Lambda and S3.
+  Use 'aws cloudformation package' to upload Lambda code to S3 before deploying.
+
+Parameters:
+  CatalogBucketName:
+    Type: String
+    Default: catalog-data-quality-bucket
+    Description: Name of the S3 bucket for catalog data
+
+Resources:
+
+  # ---- S3 Bucket ----
+  CatalogBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref CatalogBucketName
+
+  # ---- IAM Role for Lambdas ----
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: CatalogQualityLambdaRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "arn:aws:s3:::${CatalogBucketName}"
+                  - !Sub "arn:aws:s3:::${CatalogBucketName}/*"
+        - PolicyName: CloudWatchLogs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+
+  # ---- Lambda Functions ----
+  # Each function references its handler code from the lambdas/ directory.
+  # Run 'aws cloudformation package' to upload code to S3 and rewrite
+  # the local Code paths to S3 URIs before deploying.
+
+  FetchCatalogFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: FetchCatalogItems
+      Runtime: python3.11
+      Handler: handler.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code: ../lambdas/fetch_catalog
+      Timeout: 30
+      MemorySize: 128
+
+  ClassifyImageFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: ClassifyImageItem
+      Runtime: python3.11
+      Handler: handler.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code: ../lambdas/classify_image
+      Timeout: 30
+      MemorySize: 128
+
+  CheckQualityFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: CheckDataQuality
+      Runtime: python3.11
+      Handler: handler.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code: ../lambdas/check_quality
+      Timeout: 30
+      MemorySize: 128
+
+  WriteResultsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: WriteQualityResults
+      Runtime: python3.11
+      Handler: handler.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code: ../lambdas/write_results
+      Timeout: 30
+      MemorySize: 128
+
+  # ---- Step Functions IAM Role ----
+  StepFunctionsExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: CatalogQualityStepFunctionsRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeLambdas
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource:
+                  - !GetAtt FetchCatalogFunction.Arn
+                  - !GetAtt ClassifyImageFunction.Arn
+                  - !GetAtt CheckQualityFunction.Arn
+                  - !GetAtt WriteResultsFunction.Arn
+
+  # ---- Step Function State Machine ----
+  # The definition lives in statemachine/definition.json (single source of truth).
+  # DefinitionSubstitutions map the placeholder ARNs to the actual Lambda resources.
+  CatalogQualityStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: CatalogDataQualityChecker
+      RoleArn: !GetAtt StepFunctionsExecutionRole.Arn
+      DefinitionS3Location: ../statemachine/definition.json
+      DefinitionSubstitutions:
+        FetchCatalogFunctionArn: !GetAtt FetchCatalogFunction.Arn
+        ClassifyImageFunctionArn: !GetAtt ClassifyImageFunction.Arn
+        CheckQualityFunctionArn: !GetAtt CheckQualityFunction.Arn
+        WriteResultsFunctionArn: !GetAtt WriteResultsFunction.Arn
+
+Outputs:
+  StateMachineArn:
+    Value: !Ref CatalogQualityStateMachine
+  BucketName:
+    Value: !Ref CatalogBucket
